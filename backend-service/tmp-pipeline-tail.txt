@@ -1,0 +1,120 @@
+2026-07-01 19:48:20,661 - INFO - [ID: 6c4b9217-6813-4858-a320-e6f0ac44155f] - HTTP Request Picked Up: GET /api/v1/files
+2026-07-01 19:48:20,661 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/files
+2026-07-01 19:48:20,662 - INFO - [ID: 6c4b9217-6813-4858-a320-e6f0ac44155f] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:20,662 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:20,665 - INFO - [ID: 64f74add-1cb1-495a-96ff-7486e66da034] - HTTP Request Picked Up: GET /api/v1/files
+2026-07-01 19:48:20,665 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/files
+2026-07-01 19:48:20,666 - INFO - [ID: 64f74add-1cb1-495a-96ff-7486e66da034] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:20,666 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:23,806 - INFO - [ID: d444b409-da49-483c-af15-edb54867af2e] - HTTP Request Picked Up: GET /api/v1/records/pdf
+2026-07-01 19:48:23,806 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/records/pdf
+2026-07-01 19:48:23,811 - INFO - [ID: d444b409-da49-483c-af15-edb54867af2e] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:23,811 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,476 - INFO - [ID: ff093138-3557-4873-aba2-109b29001a95] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:48:28,476 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:48:28,561 - INFO - [ID: 369400f5-8d16-4740-9fb2-23c5606dd8bb] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:48:28,561 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:48:28,562 - INFO - [ID: 369400f5-8d16-4740-9fb2-23c5606dd8bb] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,562 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,567 - INFO - [ID: 369400f5-8d16-4740-9fb2-23c5606dd8bb] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,567 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,570 - INFO - [ID: c4750fd8-04bb-4d83-9278-e6c63f1c070b] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:48:28,570 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:48:28,675 - INFO - [ID: ee89b82b-dfb6-4f61-9214-696de65db071] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:48:28,675 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:48:28,675 - INFO - [ID: ee89b82b-dfb6-4f61-9214-696de65db071] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,675 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,679 - INFO - [ID: ee89b82b-dfb6-4f61-9214-696de65db071] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:28,679 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:30,896 - INFO - [ID: 30ba0b78-8788-4340-8378-fcbb4440ddc4] - HTTP Request Picked Up: GET /
+2026-07-01 19:48:30,896 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:48:30,897 - INFO - [ID: 30ba0b78-8788-4340-8378-fcbb4440ddc4] - HTTP Response Generated. Status: 200
+2026-07-01 19:48:30,897 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:49:01,345 - INFO - [ID: a36afb6c-9aea-46bc-a7d5-a622bc448fa8] - HTTP Request Picked Up: GET /
+2026-07-01 19:49:01,345 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:49:01,345 - INFO - [ID: a36afb6c-9aea-46bc-a7d5-a622bc448fa8] - HTTP Response Generated. Status: 200
+2026-07-01 19:49:01,345 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:49:31,336 - INFO - [ID: 64a72b4f-237b-415e-b8b1-092e98c59149] - HTTP Request Picked Up: GET /
+2026-07-01 19:49:31,336 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:49:31,336 - INFO - [ID: 64a72b4f-237b-415e-b8b1-092e98c59149] - HTTP Response Generated. Status: 200
+2026-07-01 19:49:31,336 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:01,343 - INFO - [ID: adafad93-0747-4c75-8a43-1d5ff3fbe45f] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:01,343 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:01,344 - INFO - [ID: adafad93-0747-4c75-8a43-1d5ff3fbe45f] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:01,344 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:12,444 - INFO - [ID: c8bb39c7-60ca-4773-ab14-a03d824a48d2] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:12,444 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:12,447 - INFO - [ID: c8bb39c7-60ca-4773-ab14-a03d824a48d2] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:12,447 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:12,449 - INFO - [ID: 736bfcb7-85c0-48aa-b5a9-7bb951b58503] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:50:12,449 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:50:12,449 - INFO - [ID: ca303cf8-40e1-47fb-8cb0-12076b85821f] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:50:12,449 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:50:12,558 - INFO - [ID: ca303cf8-40e1-47fb-8cb0-12076b85821f] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:12,558 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:12,559 - INFO - [ID: ca303cf8-40e1-47fb-8cb0-12076b85821f] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:12,559 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:42,438 - INFO - [ID: 241016c9-165c-4dd4-adfe-e5ba0d537205] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:42,438 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:42,439 - INFO - [ID: 241016c9-165c-4dd4-adfe-e5ba0d537205] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:42,439 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:43,814 - INFO - [ID: c8cb45ca-2b0b-4d4e-a2fa-de71ef4cb62d] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:43,814 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:50:43,815 - INFO - [ID: 9c6069c4-252a-48d7-85aa-6367d30089a7] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:50:43,815 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/documents
+2026-07-01 19:50:43,905 - INFO - [ID: 31547ecb-e8f7-4c67-acfe-d86610b2cf41] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:50:43,905 - INFO - [main.py] - HTTP Request Picked Up: GET /api/v1/tickets
+2026-07-01 19:50:43,906 - INFO - [ID: 31547ecb-e8f7-4c67-acfe-d86610b2cf41] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:43,906 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:43,912 - INFO - [ID: 31547ecb-e8f7-4c67-acfe-d86610b2cf41] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:43,912 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:43,914 - INFO - [ID: 31547ecb-e8f7-4c67-acfe-d86610b2cf41] - HTTP Response Generated. Status: 200
+2026-07-01 19:50:43,914 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:51:14,339 - INFO - [ID: 0bee4c1d-006f-4771-9769-a5bc8a86b24d] - HTTP Request Picked Up: GET /
+2026-07-01 19:51:14,339 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:51:14,339 - INFO - [ID: 0bee4c1d-006f-4771-9769-a5bc8a86b24d] - HTTP Response Generated. Status: 200
+2026-07-01 19:51:14,339 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:51:44,342 - INFO - [ID: 58203980-4df0-460e-9e4f-cf2f40d570f0] - HTTP Request Picked Up: GET /
+2026-07-01 19:51:44,342 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:51:44,343 - INFO - [ID: 58203980-4df0-460e-9e4f-cf2f40d570f0] - HTTP Response Generated. Status: 200
+2026-07-01 19:51:44,343 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:52:14,333 - INFO - [ID: 550c715f-6099-4fe1-8842-8ad0c0eba6ce] - HTTP Request Picked Up: GET /
+2026-07-01 19:52:14,333 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:52:14,334 - INFO - [ID: 550c715f-6099-4fe1-8842-8ad0c0eba6ce] - HTTP Response Generated. Status: 200
+2026-07-01 19:52:14,334 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:52:44,344 - INFO - [ID: 4f8b8e2b-f029-415f-8e74-0ede2cf73e4b] - HTTP Request Picked Up: GET /
+2026-07-01 19:52:44,344 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:52:44,344 - INFO - [ID: 4f8b8e2b-f029-415f-8e74-0ede2cf73e4b] - HTTP Response Generated. Status: 200
+2026-07-01 19:52:44,344 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:53:14,336 - INFO - [ID: 5e948fec-0e74-4a4e-8cbb-1dbee869b531] - HTTP Request Picked Up: GET /
+2026-07-01 19:53:14,336 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:53:14,337 - INFO - [ID: 5e948fec-0e74-4a4e-8cbb-1dbee869b531] - HTTP Response Generated. Status: 200
+2026-07-01 19:53:14,337 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:53:44,346 - INFO - [ID: a96ad71c-dcce-4abb-b018-9c490f92796c] - HTTP Request Picked Up: GET /
+2026-07-01 19:53:44,346 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:53:44,347 - INFO - [ID: a96ad71c-dcce-4abb-b018-9c490f92796c] - HTTP Response Generated. Status: 200
+2026-07-01 19:53:44,347 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:54:50,344 - INFO - [ID: e4fe66f7-1c3f-40c9-a429-19e122f2e308] - HTTP Request Picked Up: GET /
+2026-07-01 19:54:50,344 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:54:50,344 - INFO - [ID: e4fe66f7-1c3f-40c9-a429-19e122f2e308] - HTTP Response Generated. Status: 200
+2026-07-01 19:54:50,344 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:55:50,341 - INFO - [ID: 3047733b-fd86-4d5b-8790-27d176d8a151] - HTTP Request Picked Up: GET /
+2026-07-01 19:55:50,341 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:55:50,341 - INFO - [ID: 3047733b-fd86-4d5b-8790-27d176d8a151] - HTTP Response Generated. Status: 200
+2026-07-01 19:55:50,341 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:56:50,344 - INFO - [ID: d5e63dcc-0e6b-4daf-a752-23c100d6310d] - HTTP Request Picked Up: GET /
+2026-07-01 19:56:50,344 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:56:50,345 - INFO - [ID: d5e63dcc-0e6b-4daf-a752-23c100d6310d] - HTTP Response Generated. Status: 200
+2026-07-01 19:56:50,345 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:57:50,342 - INFO - [ID: 27dd389a-e356-414a-af82-6ab52bdc6063] - HTTP Request Picked Up: GET /
+2026-07-01 19:57:50,342 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:57:50,343 - INFO - [ID: 27dd389a-e356-414a-af82-6ab52bdc6063] - HTTP Response Generated. Status: 200
+2026-07-01 19:57:50,343 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:59:15,779 - INFO - [ID: 5b0635f2-c6f9-4225-b956-21ec76d649cb] - HTTP Request Picked Up: GET /
+2026-07-01 19:59:15,779 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:59:15,780 - INFO - [ID: 5b0635f2-c6f9-4225-b956-21ec76d649cb] - HTTP Response Generated. Status: 200
+2026-07-01 19:59:15,780 - INFO - [main.py] - HTTP Response Generated. Status: 200
+2026-07-01 19:59:50,332 - INFO - [ID: c004515f-c4f8-48a5-8af1-5f4e698a0d28] - HTTP Request Picked Up: GET /
+2026-07-01 19:59:50,332 - INFO - [main.py] - HTTP Request Picked Up: GET /
+2026-07-01 19:59:50,332 - INFO - [ID: c004515f-c4f8-48a5-8af1-5f4e698a0d28] - HTTP Response Generated. Status: 200
+2026-07-01 19:59:50,332 - INFO - [main.py] - HTTP Response Generated. Status: 200

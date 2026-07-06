@@ -1,0 +1,21 @@
+# Environments
+venv/
+ENV/
+env/
+
+# Secrets and Credentials
+.env
+
+# Application Execution Diagnostics Logs
+*.log
+pipeline.log
+
+# Python System Compile Artifact Caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor Settings
+.vscode/
+.idea/
