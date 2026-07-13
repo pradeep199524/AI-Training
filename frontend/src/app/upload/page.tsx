@@ -67,7 +67,6 @@ export default function UploadPage() {
     loadTickets();
   }, []);
 
-
   const loadDocuments = async () => {
     try {
       const res = await fetch(apiPath('documents?limit=10'));
@@ -125,39 +124,6 @@ export default function UploadPage() {
     return null;
   };
 
-  const waitForIngestionCompletion = async (filename: string, type: 'pdf' | 'csv') => {
-    const maxAttempts = 12;
-    const delayMs = 1500;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      pushActivity(`Waiting for ${type.toUpperCase()} ingestion (${attempt}/${maxAttempts})...`);
-
-      try {
-        if (type === 'pdf') {
-          const res = await fetch(apiPath('documents?limit=20'));
-          const payload = await res.json().catch(() => ({}));
-          const docs = payload.data || [];
-          if (docs.some((doc: DocumentSummary) => doc.filename === filename)) {
-            return true;
-          }
-        } else {
-          const res = await fetch(apiPath(`records/csv?source_file=${encodeURIComponent(filename)}&limit=1`));
-          const payload = await res.json().catch(() => ({}));
-          const records = payload.data || [];
-          if (records.length > 0) {
-            return true;
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-
-    return false;
-  };
-
   const uploadAndIngest = async (expectedType: 'pdf' | 'csv') => {
     if (!file) {
       setError('Please select a file first.');
@@ -197,6 +163,23 @@ export default function UploadPage() {
       const uploadPayload = await uploadRes.json().catch(() => ({}));
       const taskId = uploadPayload.task_id;
 
+      // ---> START: Write to localStorage for the Task Monitor Page
+      if (taskId && typeof window !== 'undefined') {
+        try {
+          const existingTasks = JSON.parse(localStorage.getItem('ingestion_tasks') || '[]');
+          const newTask = {
+            task_id: taskId,
+            filename: file.name,
+            status: 'PENDING',
+            timestamp: Date.now(),
+          };
+          localStorage.setItem('ingestion_tasks', JSON.stringify([newTask, ...existingTasks]));
+        } catch (storageErr) {
+          console.error('Could not save to localStorage', storageErr);
+        }
+      }
+      // ---> END: Write to localStorage
+
       setStatusMsg(`File uploaded and queued for ${actualType.toUpperCase()} ingestion.`);
       setRetryAction({ type: actualType, filename: file.name, taskId });
       pushActivity(`Queued ${actualType.toUpperCase()} ingestion for ${file.name}. Task: ${taskId}`);
@@ -223,11 +206,26 @@ export default function UploadPage() {
           }
           await new Promise((r) => setTimeout(r, delayMs));
         }
-        return { ok: null };
+        return { ok: null, result: null };
       };
 
-      const taskOutcome = taskId ? await pollTaskStatus(taskId) : { ok: null };
+      const taskOutcome = taskId ? await pollTaskStatus(taskId) : { ok: null, result: null };
       const ingestionSucceeded = taskOutcome.ok === true || !!uploadPayload.direct_ingest;
+
+      // ---> START: Update localStorage with the final result so Monitor page doesn't have to poll
+      if (taskId && typeof window !== 'undefined') {
+        try {
+          const finalStatus = taskOutcome.ok === true ? 'SUCCESS' : taskOutcome.ok === false ? 'FAILURE' : 'PENDING';
+          const existingTasks = JSON.parse(localStorage.getItem('ingestion_tasks') || '[]');
+          const updatedTasks = existingTasks.map((t: any) => 
+            t.task_id === taskId ? { ...t, status: finalStatus, result: taskOutcome.result } : t
+          );
+          localStorage.setItem('ingestion_tasks', JSON.stringify(updatedTasks));
+        } catch (storageErr) {
+          console.error('Could not update localStorage', storageErr);
+        }
+      }
+      // ---> END: Update localStorage
 
       if (ingestionSucceeded) {
         setStatusMsg(

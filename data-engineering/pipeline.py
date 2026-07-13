@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import gc
 import pandas as pd
 import pdfplumber
 from sqlalchemy import create_engine
@@ -33,7 +34,6 @@ def process_pdf(pdf_filename, session):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     pdf_path = os.path.join(base_dir, "data", pdf_filename)
     
-    # Check for missing file error gracefully
     if not os.path.exists(pdf_path):
         logging.error(f"File skipped. Path does not exist: {pdf_path}")
         return False
@@ -41,10 +41,10 @@ def process_pdf(pdf_filename, session):
     try:
         logging.info(f"Starting parsing execution for: {pdf_filename}")
         
-        # Check if document already tracked to prevent duplicates
+        # Clear existing entries to prevent duplicate primary keys
         existing_doc = session.query(Document).filter_by(filename=pdf_filename).first()
         if existing_doc:
-            session.delete(existing_doc)  # Overwrite refresh
+            session.delete(existing_doc)
             session.flush()
 
         db_doc = Document(filename=pdf_filename)
@@ -53,32 +53,66 @@ def process_pdf(pdf_filename, session):
 
         with pdfplumber.open(pdf_path) as pdf:
             for idx, page in enumerate(pdf.pages):
-                text = page.extract_text()
-                lines = text.split('\n') if text else []
+                
+                # 1. Table Bounding Boxes identification
+                table_objects = page.find_tables()
+                table_bboxes = [t.bbox for t in table_objects]
+                tables_data = page.extract_tables()
+
+                def is_char_in_table(c):
+                    x0, top, x1, bottom = c["x0"], c["top"], c["x1"], c["bottom"]
+                    for bbox in table_bboxes:
+                        b_x0, b_top, b_x1, b_bottom = bbox
+                        if not (x1 < b_x0 or x0 > b_x1 or bottom < b_top or top > b_bottom):
+                            return True
+                    return False
+
+                # Filter out tables completely to avoid line pollution
+                clean_page = page.filter(lambda obj: obj.get("object_type") == "char" and not is_char_in_table(obj))
+                text = clean_page.extract_text()
+                
+                raw_lines = text.split('\n') if text else []
                 
                 sections = []
-                current_section = {"header": "Visual Header Block", "paragraphs": []}
+                current_header = "Visual Header Block"
+                current_paragraph_lines = []
                 
-                # Layout Boundary and Hierarchy Extraction
-                for line in lines:
+                # 2. Smart Buffer Flow: Reconstructing complete text flows
+                for line in raw_lines:
                     line = line.strip()
                     if not line:
                         continue
+                    
+                    # Detect if line is a Header
+                    is_header = False
                     first_token = line.split(' ')[0]
-                    if first_token.replace('.', '').isdigit() and len(line) < 120:
-                        if current_section["paragraphs"]:
-                            sections.append(current_section)
-                        current_section = {"header": line, "paragraphs": []}
-                    else:
-                        current_section["paragraphs"].append(line)
-                if current_section["paragraphs"]:
-                    sections.append(current_section)
+                    
+                    if (first_token.replace('.', '').isdigit() and len(line) < 100) or line.endswith(':') or (line.isupper() and len(line) < 60):
+                        is_header = True
 
-                # Normalize layout data structure directly to JSON
+                    if is_header:
+                        if current_paragraph_lines:
+                            full_para_text = " ".join(current_paragraph_lines)
+                            sections.append({"header": current_header, "text": full_para_text})
+                            current_paragraph_lines = []
+                        current_header = line
+                    else:
+                        current_paragraph_lines.append(line)
+                        
+                        if line.endswith(('.', '?', '!')):
+                            full_para_text = " ".join(current_paragraph_lines)
+                            sections.append({"header": current_header, "text": full_para_text})
+                            current_paragraph_lines = []
+
+                if current_paragraph_lines:
+                    full_para_text = " ".join(current_paragraph_lines)
+                    sections.append({"header": current_header, "text": full_para_text})
+
+                # 3. Save Clean Normalized JSON
                 normalized_page_json = {
                     "page_number": idx + 1,
-                    "sections": sections,
-                    "tables": page.extract_tables()
+                    "content_blocks": sections, 
+                    "tables": tables_data
                 }
 
                 db_page = Page(
@@ -89,27 +123,34 @@ def process_pdf(pdf_filename, session):
                 session.add(db_page)
                 session.flush()
 
-                # Granular paragraph level extraction tracking for precise traceability
-                p_idx = 0
-                for sec in sections:
-                    for para_text in sec["paragraphs"]:
-                        db_para = Paragraph(
-                            page_id=db_page.id,
-                            paragraph_index=p_idx,
-                            text_content=para_text
-                        )
-                        session.add(db_para)
-                        p_idx += 1
-                        
+                # 4. Save to Relational Paragraph Table
+                for p_idx, block in enumerate(sections):
+                    combined_content = f"[{block['header']}] {block['text']}" if block['header'] != "Visual Header Block" else block['text']
+                    
+                    db_para = Paragraph(
+                        page_id=db_page.id,
+                        paragraph_index=p_idx,
+                        text_content=combined_content
+                    )
+                    session.add(db_para)
+
+                # --- BATCH PROCESSING START ---
+                # Every 10 pages, commit to DB and force memory cleanup
+                if (idx + 1) % 10 == 0:
+                    session.commit()
+                    gc.collect()
+                    logging.info(f"Batch checkpoint: Committed pages up to {idx + 1}")
+                # --- BATCH PROCESSING END ---
+                    
+        session.commit()
         logging.info(f"Successfully committed document: {pdf_filename}")
         return True
 
     except Exception as e:
-        # Handle partial failures gracefully: Log error, rollback session, and continue batch
         logging.error(f"Partial failure processing PDF '{pdf_filename}': {str(e)}")
         session.rollback()
         return False
-
+    
 def process_csv(csv_filename, session):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     csv_path = os.path.join(base_dir, "data", csv_filename)

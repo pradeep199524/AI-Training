@@ -2,7 +2,14 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FileSpreadsheet, FileText, UploadCloud } from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  FileSpreadsheet, 
+  FileText, 
+  UploadCloud, 
+  ListTodo,
+  Search // Added for Module 4 Query Engine
+} from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const navigation = [
@@ -10,6 +17,8 @@ const navigation = [
   { name: 'CSV Dataset', href: '/csv', icon: FileSpreadsheet },
   { name: 'PDF Docs', href: '/pdf', icon: FileText },
   { name: 'Upload Hub', href: '/upload', icon: UploadCloud },
+  { name: 'Task Monitor', href: '/tasks', icon: ListTodo },
+  { name: 'Query Engine', href: '/query', icon: Search }, // Added link route
 ];
 
 export default function Sidebar() {

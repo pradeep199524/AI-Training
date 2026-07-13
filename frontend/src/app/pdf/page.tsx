@@ -8,6 +8,8 @@ interface PdfParagraph {
   page: number;
   paragraph_index: number;
   text: string;
+  // Included to support the nested JSONB table metrics response
+  extracted_tables?: string[][][]; 
 }
 
 export default function PdfInspectorPage() {
@@ -19,11 +21,22 @@ export default function PdfInspectorPage() {
   const [error, setError] = useState('');
 
   const pullTrace = async () => {
+    if (!fileTarget) {
+      setError('Please select a PDF file first.');
+      return;
+    }
     setLoading(true);
     setError('');
 
     try {
-      const res = await fetch(apiPath(`records/pdf?source_file=${encodeURIComponent(fileTarget)}&limit=15`));
+      // Build query parameters. If a page filter exists, explicitly pass the 0-indexed integer to the backend lookup engine
+      let queryUrl = `records/pdf?source_file=${encodeURIComponent(fileTarget)}&limit=100`;
+      if (pageFilter) {
+        const backendPageIndex = Math.max(0, parseInt(pageFilter, 10) - 1);
+        queryUrl += `&page=${backendPageIndex}`;
+      }
+
+      const res = await fetch(apiPath(queryUrl));
       if (!res.ok) {
         throw new Error('Unable to load PDF paragraphs.');
       }
@@ -50,11 +63,15 @@ export default function PdfInspectorPage() {
     loadFiles();
   }, []);
 
+  // Client-side array safety verification mapping 1-based UI logic to 0-based database indexing structure safely
   const filteredRecords = records.filter((record) => {
     if (!pageFilter) {
       return true;
     }
-    return record.page.toString() === pageFilter;
+    const targetPageNum = parseInt(pageFilter, 10);
+    if (isNaN(targetPageNum)) return true;
+    
+    return record.page === targetPageNum - 1;
   });
 
   return (
@@ -70,7 +87,6 @@ export default function PdfInspectorPage() {
           <div className="grid gap-4 lg:grid-cols-[1.4fr_0.8fr_0.85fr]">
             <label className="block">
               <span className="text-sm text-slate-400">PDF source filename</span>
-              {/* Added relative wrapper for positioning custom arrow */}
               <div className="relative mt-2">
                 <select
                   value={fileTarget}
@@ -86,7 +102,6 @@ export default function PdfInspectorPage() {
                     </option>
                   ))}
                 </select>
-                {/* SVG Chevron Arrow UI Sync */}
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-slate-400">
                   <svg
                     className="h-4 w-4"
@@ -115,7 +130,7 @@ export default function PdfInspectorPage() {
               <button
                 onClick={pullTrace}
                 disabled={loading}
-                className="inline-flex h-14 items-center justify-center rounded-3xl bg-violet-500 px-6 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+                className="w-full inline-flex h-14 items-center justify-center rounded-3xl bg-violet-500 px-6 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:cursor-not-allowed disabled:bg-slate-700"
               >
                 {loading ? 'Fetching…' : 'Load Paragraphs'}
               </button>
@@ -131,13 +146,49 @@ export default function PdfInspectorPage() {
             </div>
           ) : (
             filteredRecords.map((record, idx) => (
-              <article key={`${record.source_pdf}-${record.page}-${record.paragraph_index}-${idx}`} className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-sm">
-                <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-                  <span>{record.source_pdf}</span>
-                  <span className="rounded-full bg-slate-800 px-3 py-1">Page {record.page}</span>
-                  <span className="rounded-full bg-slate-800 px-3 py-1">Paragraph {record.paragraph_index}</span>
+              <article key={`${record.source_pdf}-${record.page}-${record.paragraph_index}-${idx}`} className="rounded-3xl border border-slate-800 bg-slate-950 p-6 shadow-sm space-y-4">
+                <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+                  <span className="font-medium text-slate-300">{record.source_pdf}</span>
+                  {/* Visually map back to a 1-based page index format inside the row header component output */}
+                  <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-200">
+                    Page {record.page + 1}
+                  </span>
+                  <span className="rounded-full bg-slate-800 px-3 py-1 text-xs">Paragraph {record.paragraph_index}</span>
                 </div>
+                
                 <p className="text-slate-200 leading-7">{record.text}</p>
+
+                {/* Relational Tabular Data Block Renderer */}
+                {record.extracted_tables && record.extracted_tables.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-cyan-400">Isolated Table Matrix</h3>
+                    </div>
+                    {record.extracted_tables.map((table, tIdx) => (
+                      <div key={tIdx} className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                        <table className="min-w-full text-xs text-left text-slate-300">
+                          <thead>
+                            <tr className="border-b border-slate-800 bg-slate-900 text-slate-400">
+                              {table[0]?.map((headerCell, hIdx) => (
+                                <th key={hIdx} className="px-4 py-3 font-semibold">{headerCell}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {table.slice(1).map((rowCells, rIdx) => (
+                              <tr key={rIdx} className="border-b border-slate-900/60 hover:bg-slate-900/40 transition">
+                                {rowCells.map((cell, cIdx) => (
+                                  <td key={cIdx} className="px-4 py-2.5 font-mono text-slate-300">{cell}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </article>
             ))
           )}

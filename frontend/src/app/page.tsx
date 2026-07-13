@@ -68,7 +68,6 @@ export default function DashboardPage() {
       console.error(err);
       alert('Error deleting document. Please verify your backend API configuration.');
     } finally {
-      // Clear target string to close the custom modal UI view
       setFileToDelete(null);
     }
   };
@@ -130,7 +129,7 @@ export default function DashboardPage() {
           <div className="rounded-3xl bg-rose-500/10 border border-rose-500/20 p-6 text-rose-100">{error}</div>
         ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_0.75fr]">
+        <div className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           <section className="rounded-3xl bg-slate-900 p-8 shadow-xl shadow-slate-950/30">
             <div className="mb-6 flex items-center justify-between gap-4">
               <div>
@@ -144,57 +143,66 @@ export default function DashboardPage() {
                 Refresh
               </button>
             </div>
-            <div className="overflow-x-auto rounded-3xl border border-slate-800 bg-slate-950 p-4">
-              <table className="min-w-full text-left text-sm text-slate-300">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-500">
-                    <th className="py-3">Filename</th>
-                    <th className="py-3">Pages</th>
-                    <th className="py-3">Paragraphs</th>
-                    <th className="py-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {documents.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-500">No documents available yet.</td>
-                    </tr>
-                  ) : (
-                    documents.map((document) => (
-                      <tr key={document.id} className="border-b border-slate-800 last:border-b-0">
-                        <td className="py-4 text-slate-100">{document.filename}</td>
-                        <td className="py-4 text-slate-100">{document.page_count ?? '-'}</td>
-                        <td className="py-4 text-slate-100">{document.paragraph_count ?? '-'}</td>
-                        <td className="py-4">
-                          <button
-                            onClick={() => setFileToDelete(document.filename)}
-                            className="rounded-xl bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-400 transition hover:bg-rose-500 hover:text-white"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+
+            {/* Grid-based document layout with fixed alignments */}
+            <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5">
+              <div className="grid grid-cols-12 gap-4 pb-3 border-b border-slate-800 text-xs font-semibold uppercase tracking-wider text-slate-500 px-2">
+                <div className="col-span-5">Filename</div>
+                <div className="col-span-2 text-center">Pages</div>
+                <div className="col-span-3 text-center">Paragraphs</div>
+                <div className="col-span-2 text-right">Actions</div>
+              </div>
+
+              <div className="divide-y divide-slate-800/60 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
+                {documents.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-slate-500">
+                    No documents available yet.
+                  </div>
+                ) : (
+                  documents.map((document) => (
+                    <div key={document.id} className="grid grid-cols-12 gap-4 items-center py-3.5 text-sm px-2 hover:bg-slate-900/30 rounded-xl transition-colors">
+                      <div className="col-span-5 font-medium text-slate-200 truncate pr-2" title={document.filename}>
+                        {document.filename}
+                      </div>
+                      <div className="col-span-2 text-center text-slate-300 font-mono">
+                        {document.page_count ?? '-'}
+                      </div>
+                      <div className="col-span-3 text-center text-slate-300 font-mono">
+                        {document.paragraph_count ?? '-'}
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <button
+                          onClick={() => setFileToDelete(document.filename)}
+                          className="rounded-xl bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-400 transition hover:bg-rose-500 hover:text-white"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </section>
 
           <section className="rounded-3xl bg-slate-900 p-8 shadow-xl shadow-slate-950/30">
             <h2 className="text-xl font-semibold text-white">Recent Tickets</h2>
             <p className="mt-2 text-sm text-slate-400">Track the latest business records from the API.</p>
-            <div className="mt-6 space-y-4">
+            <div className="mt-6 space-y-4 max-h-[490px] overflow-y-auto pr-1 custom-scrollbar">
               {tickets.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950 p-8 text-center text-slate-500">No tickets found.</div>
+                <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950 p-8 text-center text-slate-500">
+                  No tickets found.
+                </div>
               ) : (
                 tickets.map((ticket) => (
-                  <article key={ticket.id} className="rounded-3xl border border-slate-800 bg-slate-950 p-5">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="font-semibold text-white">{ticket.title}</p>
-                      <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">{ticket.status}</span>
+                  <article key={ticket.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-5 hover:border-slate-700 transition-colors">
+                    <div className="flex items-start justify-between gap-4">
+                      <p className="font-semibold text-slate-200 leading-tight">{ticket.title}</p>
+                      <span className="shrink-0 rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-300 border border-slate-700/50">
+                        {ticket.status}
+                      </span>
                     </div>
-                    <p className="mt-2 text-sm text-slate-400">{ticket.customer_name}</p>
+                    <p className="mt-2.5 text-xs text-slate-400 font-medium">Assigned to: {ticket.customer_name}</p>
                   </article>
                 ))
               )}
@@ -203,18 +211,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* CUSTOM CONFIRMATION MODAL UI ELEMENT */}
+      {/* CONFIRMATION MODAL */}
       {fileToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl shadow-slate-950/50 transform scale-100 transition-all">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl shadow-slate-950/50">
             <h3 className="text-xl font-semibold text-white tracking-tight">
               Confirm Permanent Deletion
             </h3>
-            
             <p className="mt-3 text-sm text-slate-400 leading-relaxed">
-              Are you sure you want to permanently delete <span className="text-slate-200 font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">{fileToDelete}</span>? This action clears all extracted row content and paragraphs from the database.
+              Are you sure you want to permanently delete <span className="text-slate-200 font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800 break-all inline-block">{fileToDelete}</span>? This action clears all extracted row content and paragraphs from the database.
             </p>
-
             <div className="mt-6 flex justify-end gap-3">
               <button
                 onClick={() => setFileToDelete(null)}

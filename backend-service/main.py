@@ -1,26 +1,33 @@
 import os
+import re
 import sys
 import uuid
 import logging
 import shutil
-
+import traceback
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
+from celery.result import AsyncResult
+from celery import Celery
 
+# Internal project imports
+from database import SessionLocal, engine
 base_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(base_dir, "..", "data-engineering"))
 
-from worker import async_ingest_pdf, async_ingest_csv, celery_app
-from celery.result import AsyncResult
-from pipeline import process_pdf, process_csv
 from models import Base, Document, Ticket
+from retrieval_router import router as retrieval_router, initialize_retrieval_system
 
 load_dotenv()
 
+# ==========================================================================
+# LOGGING CONFIGURATION
+# ==========================================================================
 logger = logging.getLogger("pipeline")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
@@ -29,10 +36,31 @@ if not logger.handlers:
     log_handler.setFormatter(log_formatter)
     logger.addHandler(log_handler)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ==========================================================================
+# LIFESPAN (STARTUP/SHUTDOWN) MANAGEMENT
+# ==========================================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- STARTUP PHASE ---
+    print("🚀 Server starting: Initializing Retrieval Engine...")
+    try:
+        initialize_retrieval_system(BASE_DIR)
+    except Exception as e:
+        print(f"❌ Critical Engine Initialization Failed on Startup: {str(e)}")
+    yield
+    # --- SHUTDOWN PHASE ---
+    print("🛑 Server shutting down: Cleaning up resources...")
+
+# ==========================================================================
+# FASTAPI APP INITIALIZATION
+# ==========================================================================
 app = FastAPI(
     title="Data Engineering Microservice Framework",
     description="Module 2 API Engine exposing ingestion, traceability, and business record workflows.",
     version="2.0.0",
+    lifespan=lifespan  # ✅ Correctly bound lifespan to the running app instance
 )
 
 app.add_middleware(
@@ -43,15 +71,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+# Register modular routers
+app.include_router(retrieval_router)
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+# ==========================================================================
+# CELERY CONFIGURATION
+# ==========================================================================
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+celery_client = Celery(
+    "tasks", 
+    broker=redis_url, 
+    backend=redis_url
+)
+
+# Initialize Relational Database Schemas
 Base.metadata.create_all(engine)
 
 
+# ==========================================================================
+# PYDANTIC SCHEMAS / VALIDATORS
+# ==========================================================================
 class IngestionRequest(BaseModel):
     filename: str = Field(..., min_length=1, description="Target file name sitting inside data-engineering/data/")
 
@@ -72,10 +111,12 @@ class TicketUpdate(TicketCreate):
     pass
 
 
+# ==========================================================================
+# CORE APPS MIDDLEWARE
+# ==========================================================================
 @app.middleware("http")
 async def add_correlation_id_and_logging(request: Request, call_next):
     correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
-
     old_factory = logging.getLogRecordFactory()
 
     def record_factory(*args, **kwargs):
@@ -92,6 +133,15 @@ async def add_correlation_id_and_logging(request: Request, call_next):
     return response
 
 
+# ==========================================================================
+# API ENDPOINTS
+# ==========================================================================
+
+@app.get("/", tags=["System"])
+async def health_check():
+    return {"status": "online", "message": "Backend API Engine is running and active."}
+
+
 @app.post("/api/v1/ingest/pdf", status_code=status.HTTP_202_ACCEPTED, tags=["Queue Ingestion Triggers"])
 async def trigger_pdf_ingestion(payload: IngestionRequest):
     correlation_id = str(uuid.uuid4())
@@ -101,33 +151,16 @@ async def trigger_pdf_ingestion(payload: IngestionRequest):
         logger.error(f"Ingestion Aborted. File not found at location: {payload.filename}")
         raise HTTPException(status_code=404, detail=f"Target file '{payload.filename}' not found.")
 
-    task_id = None
-    direct_ingest = False
     try:
-        task = async_ingest_pdf.delay(payload.filename, correlation_id)
-        task_id = task.id
+        task = celery_client.send_task("tasks.async_ingest_pdf", args=[payload.filename, correlation_id])
         logger.info(f"Async PDF ingestion task context successfully handed off to Redis. Job ID: {task.id}")
         return {"status": "queued", "task_id": task.id, "message": "Background ingestion process initialized successfully."}
     except Exception as exc:
-        logger.warning(f"Redis unavailable for PDF ingestion. Falling back to direct ingestion for {payload.filename}. Error: {str(exc)}")
-        direct_ingest = True
-        session = SessionLocal()
-        try:
-            success = process_pdf(payload.filename, session)
-            if not success:
-                session.rollback()
-                raise HTTPException(status_code=500, detail=f"Direct ingestion failed for {payload.filename}")
-            session.commit()
-            logger.info(f"Direct PDF ingestion completed for {payload.filename}")
-            return {"status": "processed", "task_id": task_id, "direct_ingest": True, "message": "File ingested directly because background queue was unavailable."}
-        except HTTPException:
-            raise
-        except Exception as exc:
-            session.rollback()
-            logger.error(f"Direct PDF ingestion failed for {payload.filename}: {str(exc)}")
-            raise HTTPException(status_code=500, detail=f"Direct ingestion failed for {payload.filename}") from exc
-        finally:
-            session.close()
+        logger.critical(f"Redis unavailable for PDF ingestion. Error: {str(exc)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ingestion broker queue is offline. Direct processing fallback is disabled to keep API thread responsive."
+        )
 
 
 @app.post("/api/v1/ingest/csv", status_code=status.HTTP_202_ACCEPTED, tags=["Queue Ingestion Triggers"])
@@ -139,45 +172,22 @@ async def trigger_csv_ingestion(payload: IngestionRequest):
         logger.error(f"Ingestion Aborted. File not found at location: {payload.filename}")
         raise HTTPException(status_code=404, detail=f"Target file '{payload.filename}' not found.")
 
-    task_id = None
-    direct_ingest = False
     try:
-        task = celery_app.send_task("tasks.async_ingest_csv", args=[payload.filename, correlation_id])
-        task_id = task.id
+        task = celery_client.send_task("tasks.async_ingest_csv", args=[payload.filename, correlation_id])
         logger.info(f"Async CSV ingestion task context successfully handed off to Redis. Job ID: {task.id}")
         return {"status": "queued", "task_id": task.id, "message": "Background ingestion process initialized successfully."}
     except Exception as exc:
-        logger.warning(f"Redis unavailable for CSV ingestion. Falling back to direct ingestion for {payload.filename}. Error: {str(exc)}")
-        direct_ingest = True
-        session = SessionLocal()
-        try:
-            success = process_csv(payload.filename, session)
-            if not success:
-                session.rollback()
-                raise HTTPException(status_code=500, detail=f"Direct ingestion failed for {payload.filename}")
-            session.commit()
-            logger.info(f"Direct CSV ingestion completed for {payload.filename}")
-            return {"status": "processed", "task_id": task_id, "direct_ingest": True, "message": "File ingested directly because background queue was unavailable."}
-        except HTTPException:
-            raise
-        except Exception as exc:
-            session.rollback()
-            logger.error(f"Direct CSV ingestion failed for {payload.filename}: {str(exc)}")
-            raise HTTPException(status_code=500, detail=f"Direct ingestion failed for {payload.filename}") from exc
-        finally:
-            session.close()
-
-
-@app.get("/", tags=["System"])
-async def health_check():
-    return {"status": "online", "message": "Backend API Engine is running."}
+        logger.critical(f"Redis unavailable for CSV ingestion. Error: {str(exc)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ingestion broker queue is offline. Direct processing fallback is disabled to keep API thread responsive."
+        )
 
 
 @app.get("/api/v1/documents", tags=["Data Engine Lookups"])
 async def list_documents(limit: int = 20):
     session = SessionLocal()
     try:
-        # 1. Fetch the PDF data array so the document browser doesn't break
         docs = session.query(Document).order_by(Document.id.desc()).limit(limit).all()
         payload = [
             {
@@ -185,11 +195,12 @@ async def list_documents(limit: int = 20):
                 "filename": doc.filename,
                 "page_count": len(doc.pages),
                 "paragraph_count": sum(len(page.paragraphs) for page in doc.pages),
+                "pages": len(doc.pages),
+                "paragraphs": sum(len(page.paragraphs) for page in doc.pages),
             }
             for doc in docs
         ]
         
-        # 2. Derive the KPI badge number from the actual physical directory
         data_dir = os.path.join(base_dir, "..", "data-engineering", "data")
         total_uploaded_files = 0
         
@@ -199,9 +210,8 @@ async def list_documents(limit: int = 20):
                 if f.lower().endswith(('.pdf', '.csv')) and os.path.isfile(os.path.join(data_dir, f))
             ])
         else:
-            total_uploaded_files = len(payload) # Fallback baseline
+            total_uploaded_files = len(payload)
             
-        # Return total files for the badge, but preserve data rows for the list views
         return {"count": total_uploaded_files, "data": payload}
         
     except Exception as exc:
@@ -213,10 +223,6 @@ async def list_documents(limit: int = 20):
 
 @app.get("/api/v1/files", tags=["System"])
 async def list_available_files(extensions: str = "pdf,csv"):
-    """List available files in the data-engineering/data directory.
-
-    Query param `extensions` is a comma-separated list, e.g. `pdf,csv`.
-    """
     try:
         exts = [e.strip().lower() for e in extensions.split(',') if e.strip()]
         data_dir = os.path.join(base_dir, "..", "data-engineering", "data")
@@ -282,7 +288,12 @@ async def fetch_pdf_records(source_file: str = None, limit: int = 10):
     try:
         if source_file:
             query = text("""
-                SELECT d.filename, p.page_number, para.paragraph_index, para.text_content
+                SELECT 
+                    d.filename, 
+                    p.page_number, 
+                    para.paragraph_index, 
+                    para.text_content,
+                    p.raw_json_content->'tables' AS page_tables
                 FROM paragraphs para
                 JOIN pages p ON para.page_id = p.id
                 JOIN documents d ON p.document_id = d.id
@@ -293,16 +304,41 @@ async def fetch_pdf_records(source_file: str = None, limit: int = 10):
             result = session.execute(query, {"src": source_file, "lim": limit}).fetchall()
         else:
             query = text("""
-                SELECT d.filename, p.page_number, para.paragraph_index, para.text_content
+                SELECT 
+                    d.filename, 
+                    p.page_number, 
+                    para.paragraph_index, 
+                    para.text_content,
+                    p.raw_json_content->'tables' AS page_tables
                 FROM paragraphs para
                 JOIN pages p ON para.page_id = p.id
                 JOIN documents d ON p.document_id = d.id
                 WHERE para.text_content != ''
+                ORDER BY d.filename ASC, p.page_number ASC, para.paragraph_index ASC
                 LIMIT :lim;
             """)
             result = session.execute(query, {"lim": limit}).fetchall()
 
-        trace_tree = [{"source_pdf": r[0], "page": r[1], "paragraph_index": r[2], "text": r[3]} for r in result]
+        trace_tree = []
+        for r in result:
+            import json
+            raw_tables = r[4]
+            if isinstance(raw_tables, str):
+                try:
+                    tables_list = json.loads(raw_tables)
+                except Exception:
+                    tables_list = []
+            else:
+                tables_list = raw_tables if raw_tables is not None else []
+
+            trace_tree.append({
+                "source_pdf": r[0], 
+                "page": r[1], 
+                "paragraph_index": r[2], 
+                "text": r[3],
+                "extracted_tables": tables_list
+            })
+
         return {"count": len(trace_tree), "data": trace_tree}
     except Exception as exc:
         logger.error(f"PDF trace retrieval failure: {str(exc)}")
@@ -442,56 +478,33 @@ async def upload_file(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     correlation_id = str(uuid.uuid4())
-    task_id = None
-    direct_ingest = False
     try:
         if extension == ".pdf":
-            task = async_ingest_pdf.delay(file.filename, correlation_id)
+            task = celery_client.send_task("tasks.async_ingest_pdf", args=[file.filename, correlation_id])
         else:
-            task = async_ingest_csv.delay(file.filename, correlation_id)
-        task_id = task.id
+            task = celery_client.send_task("tasks.async_ingest_csv", args=[file.filename, correlation_id])
+            
         logger.info(f"Triggered ingestion for {file.filename}. Task ID: {task.id}")
+        return {
+            "filename": file.filename,
+            "message": "File uploaded and background ingestion started successfully",
+            "task_id": task.id,
+            "direct_ingest": False,
+        }
     except Exception as exc:
-        logger.warning(f"Background queue unavailable for {file.filename}. Falling back to direct ingestion. Error: {str(exc)}")
-        direct_ingest = True
-        session = SessionLocal()
-        try:
-            if extension == ".pdf":
-                success = process_pdf(file.filename, session)
-            else:
-                success = process_csv(file.filename, session)
-            if not success:
-                session.rollback()
-                raise HTTPException(status_code=500, detail=f"Direct ingestion failed for {file.filename}")
-            session.commit()
-            logger.info(f"Direct ingestion completed for {file.filename}")
-        except HTTPException:
-            raise
-        except Exception as exc:
-            session.rollback()
-            logger.error(f"Direct ingestion failed for {file.filename}: {str(exc)}")
-            raise HTTPException(status_code=500, detail=f"Direct ingestion failed for {file.filename}") from exc
-        finally:
-            session.close()
-
-    response = {
-        "filename": file.filename,
-        "message": "File uploaded and ingestion started successfully",
-        "task_id": task_id,
-        "direct_ingest": direct_ingest,
-    }
-    if direct_ingest:
-        response["message"] = "File uploaded and ingested directly because background queue was unavailable."
-    return response
+        logger.critical(f"Redis queue execution failed for uploaded file {file.filename}. Error: {str(exc)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="File written to disk, but backend messaging broker is down. Automated ingestion could not be scheduled."
+        )
 
 
 @app.get("/api/v1/tasks/{task_id}", tags=["System"])
 async def get_task_status(task_id: str):
     try:
-        result = AsyncResult(task_id, app=celery_app)
+        result = AsyncResult(task_id, app=celery_client)
         state = result.state
         payload = {"task_id": task_id, "status": state}
-        # include result if available and safe
         if state == 'SUCCESS':
             try:
                 payload["result"] = result.result
@@ -507,43 +520,38 @@ async def get_task_status(task_id: str):
         logger.error(f"Task status lookup failed: {str(exc)}")
         raise HTTPException(status_code=500, detail="Unable to retrieve task status.") from exc
 
+
 @app.delete("/api/v1/files/{filename}", tags=["System", "Data Engine Lookups"])
 async def delete_document_and_file(filename: str):
     session = SessionLocal()
     try:
-        # 1. Remove the physical file from the data directory
         file_path = os.path.join(base_dir, "..", "data-engineering", "data", filename)
-        file_deleted = False
         
         if os.path.exists(file_path):
-            os.remove(file_path)
-            logger.info(f"Deleted physical file: {file_path}")
-            file_deleted = True
-
-        # 2. Clean up PDF records from the database
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted physical file: {file_path}")
+            except PermissionError:
+                logger.error(f"Cannot delete {filename}: File is locked by another process.")
+                raise HTTPException(status_code=409, detail="File is currently locked. Please restart the worker or wait a moment.")
+        
         doc = session.query(Document).filter(Document.filename == filename).first()
         if doc:
-            session.delete(doc) # This will cascade and delete pages/paragraphs if relationships are configured
+            session.delete(doc)
             logger.info(f"Deleted database document records for: {filename}")
         
-        # 3. Clean up CSV records from the database
         if filename.lower().endswith('.csv'):
-            query_csv = text("DELETE FROM cleaned_csv_records WHERE source_csv = :fname;")
-            session.execute(query_csv, {"fname": filename})
+            session.execute(text("DELETE FROM cleaned_csv_records WHERE source_csv = :fname;"), {"fname": filename})
             logger.info(f"Deleted database CSV records for: {filename}")
 
         session.commit()
-
-        if not file_deleted and not doc:
-            raise HTTPException(status_code=404, detail="File or Document not found.")
-
-        return {"status": "success", "message": f"Successfully deleted {filename} and its extracted data."}
+        return {"status": "success", "message": f"Successfully deleted {filename}."}
         
-    except HTTPException:
-        raise
+    except HTTPException as he:
+        raise he
     except Exception as exc:
         session.rollback()
-        logger.error(f"File deletion error for {filename}: {str(exc)}")
-        raise HTTPException(status_code=500, detail="Unable to delete file and data.") from exc
+        logger.error(f"CRITICAL ERROR deleting {filename}: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Database or file system error occurred. Check logs.")
     finally:
         session.close()
