@@ -75,7 +75,7 @@ def initialize_retrieval_system(base_dir: str):
                     items = [f"{k}: {v}" for k, v in r[1].items()]
                     chunks_cache.append({
                         "text": f"CSV Record from {r[0]} -> " + ", ".join(items),
-                        "metadata": {"document_name": r[0], "page_number": 0}
+                        "metadata": {"document_name": r[0], "page_number": 1}
                     })
                     loaded_count += 1
             print(f"📊 SUCCESS: Loaded {loaded_count} CSV records.")
@@ -127,7 +127,13 @@ async def retrieve_and_evaluate_strategies(payload: Module4SearchQueryRequest):
                     except: continue
             
             res_text = f"Analytical Summary: " + ", ".join([f"{k}: {v}" for k, v in dept_counts.items()])
-            agg_result = [{"text": res_text, "score": 1.0, "document_name": "Aggregator", "page_number": 0}]
+            agg_result = [{
+                "text": res_text, 
+                "score": 1.0, 
+                "document_name": "Aggregator", 
+                "page_number": 1,
+                "metadata": {"document_name": "Aggregator", "page_number": 1}
+            }]
             
             return {
                 "input_query": user_query,
@@ -150,7 +156,6 @@ async def retrieve_and_evaluate_strategies(payload: Module4SearchQueryRequest):
         if dynamic_filter:
             filter_conditions.append({"document_name": dynamic_filter})
             
-        # 🔥 Use our powerful extraction function instead of the strict regex!
         emp_id = extract_employee_id(user_query)
         if emp_id:
             filter_conditions.append({"employee_id": str(emp_id)})
@@ -174,6 +179,13 @@ async def retrieve_and_evaluate_strategies(payload: Module4SearchQueryRequest):
         # 3. HYBRID (Added meta_filter and target_emp_id)
         hybrid_cands = hybrid_rrf_search(normalized, collection, chunks_cache, embedding_model, top_k=cfg["MAX_RRF_CANDIDATES"], metadata_filter=meta_filter)
         approach_hybrid = rerank_hybrid_results(expanded, [dict(i) for i in hybrid_cands], reranker_model, top_k=cfg["DISPLAY_LIMIT"], target_emp_id=emp_id)
+
+        # --- FIX: FLATTEN METADATA FOR REACT UI COMPATIBILITY ---
+        for result_list in [approach_dense, approach_sparse, approach_hybrid]:
+            for item in result_list:
+                if "metadata" in item:
+                    item["document_name"] = item["metadata"].get("document_name", "Unknown")
+                    item["page_number"] = item["metadata"].get("page_number", 1)
 
         # Evaluation Analytics
         def get_acc(res, q): return 100.0 if res and any(t in str(res[0]).lower() for t in q.lower().split() if len(t)>2) else 0.0

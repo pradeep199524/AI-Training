@@ -4,7 +4,6 @@ import json
 import numpy as np
 import chromadb
 import traceback
-import matplotlib.pyplot as plt
 from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, joinedload
@@ -17,14 +16,12 @@ from models import Document, Page, Paragraph, CleanedCsvRecord
 load_dotenv()
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-# FORCE PATH: Ensure vector_db is strictly created inside the 'data-engineering' directory
 if SCRIPT_DIR.name in ["data_engineering", "data-engineering", "backend_service"]:
     DB_PATH = SCRIPT_DIR.parent / "data-engineering" / "vector_db"
 else:
     DB_PATH = SCRIPT_DIR / "data-engineering" / "vector_db"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 if not DATABASE_URL:
     raise ValueError("CRITICAL: DATABASE_URL not found in configuration.")
 
@@ -36,7 +33,6 @@ SHARED_ROOT = SCRIPT_DIR.parent if SCRIPT_DIR.name in ["data_engineering", "back
 MODELS_DIR = SHARED_ROOT / "local_models"
 
 print(f"📦 Initializing Models from shared directory: {MODELS_DIR}")
-
 local_bi_path = MODELS_DIR / "all-MiniLM-L6-v2"
 local_cross_path = MODELS_DIR / "ms-marco-MiniLM-L-6-v2"
 
@@ -44,26 +40,17 @@ embedding_model = SentenceTransformer(str(local_bi_path)) if local_bi_path.is_di
 reranker_model = CrossEncoder(str(local_cross_path)) if local_cross_path.is_dir() else CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
 
 
-# --- NEW: ID EXTRACTION FUNCTION ---
 def extract_employee_id(query_str):
-    """Dynamically finds any 4+ digit number in the query."""
-    match = re.search(r'(\d{4,})', query_str)
+    query_lower = query_str.lower()
+    employee_keywords = {"employee", "emp", "id", "salary", "experience", "staff", "worker", "performance", "record", "individual"}
+    if not any(kw in query_lower for kw in employee_keywords): return None
+    match = re.search(r'\b(\d{4,})\b', query_str)
     return match.group(1) if match else None
 
-
-# --- 1. ADVANCED QUERY INTELLIGENCE (NORMALIZATION, ROUTING & EXPANSION) ---
-
 DOMAIN_DICTIONARY = {
-    "prod": "production", 
-    "integration": "integration system", 
-    "pipeline": "data pipeline diagnostics", 
-    "err": "error log",
-    "dev": "development",
-    "db": "database",
-    "config": "configuration",
-    "auth": "authentication"
+    "prod": "production", "integration": "integration system", "pipeline": "data pipeline diagnostics", 
+    "err": "error log", "dev": "development", "db": "database", "config": "configuration", "auth": "authentication"
 }
-
 STOP_WORDS = {"what", "is", "the", "how", "to", "find", "where", "can", "i", "a", "an", "of", "and", "in", "at", "on"}
 
 def get_available_sources(session):
@@ -71,32 +58,52 @@ def get_available_sources(session):
     csvs = session.query(CleanedCsvRecord.source_csv).all()
     return [d[0] for d in docs] + [c[0] for c in csvs]
 
-def get_source_filter(query_str: str, session, embed_model, threshold=0.35) -> str:
+def get_source_filter(query_str: str, session, embed_model, threshold=0.60) -> str:
     available_sources = get_available_sources(session)
-    if not available_sources:
-        return None
+    if not available_sources: return None
+    query_lower = query_str.lower()
 
-    source_phrases = [re.sub(r'[._-]', ' ', src.lower()) for src in available_sources]
-    source_embeddings = embed_model.encode(source_phrases)
-    query_embedding = embed_model.encode([query_str.lower()])[0]
+    for src in available_sources:
+        src_clean = re.sub(r'[._-]', ' ', src.lower())
+        parts = [p for p in src_clean.split() if len(p) > 3 and p not in ["csv", "pdf"]]
+        if parts and all(part in query_lower for part in parts): return src
+
+    csv_keywords = {"employee", "salary", "experience", "department", "staff", "performance", "csv", "job", "city", "rating"}
+    pdf_keywords = {"artificial intelligence", "machine learning", "data engineering", "cloud computing", "cybersecurity", "sql", "python", "pdf", "knowledge base", "pipeline", "diagnostics", "error", "log"}
+
+    csv_matches = sum(1 for kw in csv_keywords if kw in query_lower)
+    pdf_matches = sum(1 for kw in pdf_keywords if kw in query_lower)
+
+    if csv_matches > 0 and pdf_matches == 0:
+        for src in available_sources:
+            if src.endswith('.csv') or 'employee' in src.lower(): return src
+    if pdf_matches > 0 and csv_matches == 0:
+        for src in available_sources:
+            if src.endswith('.pdf') or 'knowledge' in src.lower() or 'pipeline' in src.lower() or 'diagnostic' in src.lower(): return src
+
+    def get_source_description(src_name: str) -> str:
+        name_lower = src_name.lower()
+        if "employee" in name_lower or name_lower.endswith(".csv"): return "employee profiles, salaries, experience, performance ratings, city locations, HR spreadsheets"
+        elif "pipeline" in name_lower or "diagnostic" in name_lower or "error" in name_lower: return "production pipeline diagnostics, integration systems, error logs, stacktraces, telemetry, system errors"
+        elif "knowledge" in name_lower or "ai" in name_lower or name_lower.endswith(".pdf"): return "artificial intelligence, machine learning concepts, data engineering, cybersecurity, SQL databases, Python development document"
+        return re.sub(r'[._-]', ' ', src_name.lower())
+
+    descriptions = [get_source_description(src) for src in available_sources]
+    source_embeddings = embed_model.encode(descriptions)
+    query_embedding = embed_model.encode([query_lower])[0]
 
     best_score = -1
     best_source = None
-
     for idx, src_emb in enumerate(source_embeddings):
         dot_product = np.dot(query_embedding, src_emb)
         norm_q = np.linalg.norm(query_embedding)
         norm_s = np.linalg.norm(src_emb)
         similarity = dot_product / (norm_q * norm_s) if (norm_q * norm_s) > 0 else 0
-        
         if similarity > best_score:
             best_score = similarity
             best_source = available_sources[idx]
 
-    if best_score >= threshold:
-        print(f"🎯 Query Intelligence routed query to: {best_source} (Confidence: {best_score:.2f})")
-        return best_source
-        
+    if best_score >= threshold: return best_source
     return None
 
 def optimize_query(query_str: str) -> str:
@@ -107,11 +114,75 @@ def optimize_query(query_str: str) -> str:
 
 def expand_query_with_llm(user_query: str) -> str:
     normalized = optimize_query(user_query)
-    if "error" in normalized or "log" in normalized:
-        return f"{normalized} stacktrace exception warning fault debugging latency"
-    if "production" in normalized or "pipeline" in normalized:
-        return f"{normalized} deployment orchestrator cluster stream telemetry ingest"
+    if "error" in normalized or "log" in normalized: return f"{normalized} stacktrace exception warning fault debugging latency"
+    if "production" in normalized or "pipeline" in normalized: return f"{normalized} deployment orchestrator cluster stream telemetry ingest"
     return f"{normalized} configuration architecture deployment interface specs"
+
+# --- 🔥 UPGRADED: INTELLIGENT TEXT & TABLE CHUNKING LOGIC 🔥 ---
+def chunk_text_intelligently(text, max_words=40):
+    """
+    Breaks large blocks into precise chunks.
+    Specifically engineered to detect PDF tables/lists and split them ROW BY ROW.
+    """
+    # 1. Clean PDF Table formatting (convert extracted newlines/quotes to readable inline pipes)
+    clean_text = text.replace('"\n,"', ' | ').replace('"\r\n,"', ' | ')
+    clean_text = clean_text.replace('"\n', '\n').replace('"', '')
+    
+    chunks = []
+    
+    # 2. TABLE DETECTION: If there are many newlines but no periods, it's a table/list!
+    if clean_text.count('\n') >= 2 and clean_text.count('.') <= 1:
+        lines = [line.strip() for line in clean_text.split('\n') if len(line.strip()) > 2]
+        header = ""
+        for line in lines:
+            if '|' in line and not header:
+                header = line  # Catch the table header row
+                continue
+            
+            # Combine header + row so the chunk has full context!
+            if header and '|' in line:
+                chunks.append(f"Table Data -> [{header}] : [{line}]")
+            else:
+                chunks.append(line)
+                
+        if chunks: return chunks
+
+    # 3. NORMAL PARAGRAPH PROCESSING
+    clean_text = clean_text.replace('\n', ' ')
+    clean_text = re.sub(r'\s+', ' ', clean_text)
+    
+    sentences = re.split(r'(?<=[.!?]) +', clean_text.strip())
+    current_chunk = []
+    current_length = 0
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence: continue
+        
+        words = sentence.split()
+        
+        # Absolute hard-limit fallback
+        if len(words) > max_words:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_length = 0
+            for i in range(0, len(words), max_words):
+                chunks.append(" ".join(words[i:i+max_words]))
+            continue
+
+        if current_length + len(words) > max_words and current_chunk:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [sentence]
+            current_length = len(words)
+        else:
+            current_chunk.append(sentence)
+            current_length += len(words)
+            
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+        
+    return chunks
 
 # --- 2. STRUCTURE-AWARE CLEAN CHUNKING ---
 def generate_structure_aware_chunks(session):
@@ -122,15 +193,19 @@ def generate_structure_aware_chunks(session):
     
     for p in paragraphs:
         text_content = p.text_content.strip()
-        if not text_content: continue
+        if not text_content or len(text_content) < 10: continue
+            
         doc_name = p.page.document.filename if (p.page and p.page.document) else "Unknown"
-        page_num = p.page.page_number if p.page else 0
+        page_num = p.page.page_number if p.page and p.page.page_number > 0 else 1
 
-        chunks.append({
-            "text": text_content, 
-            # FIXED: Changed "page_number" to "page" for UI compatibility
-            "metadata": {"document_name": doc_name, "page": page_num}
-        })
+        sub_chunks = chunk_text_intelligently(text_content, max_words=40)
+        
+        for sc in sub_chunks:
+            chunks.append({
+                "text": sc, 
+                "metadata": {"document_name": doc_name, "page_number": page_num}
+            })
+            
     return chunks
 
 def generate_csv_aware_chunks(session):
@@ -157,8 +232,7 @@ def generate_csv_aware_chunks(session):
                 "text": text_content,
                 "metadata": {
                     "document_name": record.source_csv,
-                    # FIXED: Changed "page_number" to "page" for UI compatibility
-                    "page": 0,
+                    "page_number": 1,
                     "employee_id": emp_id,
                 }
             })
@@ -181,27 +255,20 @@ def build_persistent_index(chunks, model):
     return collection
 
 def normalize_metadata_filter(metadata_filter):
-    if not metadata_filter or "$and" in metadata_filter or "$or" in metadata_filter:
-        return metadata_filter
-    if len(metadata_filter) > 1:
-        return {"$and": [{k: v} for k, v in metadata_filter.items()]}
+    if not metadata_filter or "$and" in metadata_filter or "$or" in metadata_filter: return metadata_filter
+    if len(metadata_filter) > 1: return {"$and": [{k: v} for k, v in metadata_filter.items()]}
     return metadata_filter
 
 # --- 4. RETRIEVAL & HYBRID RERANKING ---
 def semantic_search(query_str, collection, model, top_k=3, metadata_filter=None):
     filter_to_use = normalize_metadata_filter(metadata_filter)
-    res = collection.query(
-        query_embeddings=model.encode([query_str]).tolist(), 
-        n_results=top_k,
-        where=filter_to_use 
-    )
+    res = collection.query(query_embeddings=model.encode([query_str]).tolist(), n_results=top_k, where=filter_to_use)
     if not res['documents'] or not res['documents'][0]: return []
     return [{"text": res['documents'][0][i], "score": float(1.0 - res['distances'][0][i]), "metadata": res['metadatas'][0][i]} for i in range(len(res['documents'][0]))]
 
 def sparse_keyword_search(query_str, chunks, top_k=3, source_filter=None, emp_id_filter=None):
     filtered_chunks = [
-        c for c in chunks 
-        if (source_filter is None or c["metadata"].get("document_name") == source_filter) and
+        c for c in chunks if (source_filter is None or c["metadata"].get("document_name") == source_filter) and
            (emp_id_filter is None or str(c["metadata"].get("employee_id", "")) == str(emp_id_filter))
     ]
     if not filtered_chunks: return []
@@ -210,58 +277,40 @@ def sparse_keyword_search(query_str, chunks, top_k=3, source_filter=None, emp_id
     ranked_indices = np.argsort(scores)[::-1][:top_k]
     results = []
     for idx in ranked_indices:
-        if scores[idx] > 0:
-            results.append({
-                "text": filtered_chunks[idx]["text"],
-                "score": float(scores[idx]),
-                "metadata": filtered_chunks[idx]["metadata"] 
-            })
+        if scores[idx] > 0: results.append({"text": filtered_chunks[idx]["text"], "score": float(scores[idx]), "metadata": filtered_chunks[idx]["metadata"]})
     return results
     
 def hybrid_rrf_search(query_str, collection, chunks, model, top_k=3, k=60, metadata_filter=None):
     dense = semantic_search(query_str, collection, model, top_k=min(len(chunks), 10), metadata_filter=metadata_filter)
-    
-    source_name = None
-    emp_id = None
+    source_name, emp_id = None, None
     if metadata_filter:
         conditions = metadata_filter.get("$and", [metadata_filter])
         for cond in conditions:
             if "document_name" in cond: source_name = cond["document_name"]
             if "employee_id" in cond: emp_id = cond["employee_id"]
 
-    sparse = sparse_keyword_search(query_str, chunks, top_k=min(len(chunks), 10), 
-                                   source_filter=source_name, emp_id_filter=emp_id)
+    sparse = sparse_keyword_search(query_str, chunks, top_k=min(len(chunks), 10), source_filter=source_name, emp_id_filter=emp_id)
     
-    scores = {}
-    doc_map = {}
-    for d in dense + sparse:
-        doc_map[d["text"]] = d.get("metadata", {})
-        
+    scores, doc_map = {}, {}
+    for d in dense + sparse: doc_map[d["text"]] = d.get("metadata", {})
     for r, d in enumerate(dense, 1): scores[d["text"]] = scores.get(d["text"], 0.0) + (1.0 / (k + r))
     for r, d in enumerate(sparse, 1): scores[d["text"]] = scores.get(d["text"], 0.0) + (1.0 / (k + r))
         
     sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
     return [{"text": t, "score": s, "metadata": doc_map[t]} for t, s in sorted_docs]
 
-
-# --- UPGRADED RERANKER: HARD BOOST FOR ID ---
 def rerank_hybrid_results(query_str, candidates, reranker, top_k=3, target_emp_id=None):
     if not candidates: return []
-    
     for c in candidates:
         meta_id = str(c["metadata"].get("employee_id", ""))
-        if target_emp_id and meta_id == str(target_emp_id):
-            c["rerank_score"] = 999.0
-        else:
-            c["rerank_score"] = 0.0
+        if target_emp_id and meta_id == str(target_emp_id): c["rerank_score"] = 999.0
+        else: c["rerank_score"] = 0.0
 
     if not any(c.get("rerank_score") == 999.0 for c in candidates):
         scores = reranker.predict([[query_str, c["text"]] for c in candidates])
-        for i, s in enumerate(scores): 
-            candidates[i]["rerank_score"] = float(s)
+        for i, s in enumerate(scores): candidates[i]["rerank_score"] = float(s)
             
     return sorted(candidates, key=lambda x: x["rerank_score"], reverse=True)[:top_k]
-
 
 # --- 5. ENTERPRISE OFFLINE EVALUATION BENCHMARK METRICS ---
 def run_offline_evaluation_benchmark(chunks_cache, collection):
@@ -282,12 +331,10 @@ def run_offline_evaluation_benchmark(chunks_cache, collection):
     for item in golden_dataset:
         raw_q = item["query"]
         target_doc = item["expected_document"]
-        
         expanded_q = expand_query_with_llm(raw_q)
         dynamic_filter = get_source_filter(raw_q, session, embedding_model)
         emp_id = extract_employee_id(raw_q)
         
-        # Build Filter Map
         meta_filter = {}
         if dynamic_filter: meta_filter["document_name"] = dynamic_filter
         if emp_id: meta_filter["employee_id"] = emp_id
@@ -298,9 +345,7 @@ def run_offline_evaluation_benchmark(chunks_cache, collection):
             "Hybrid + Reranking": rerank_hybrid_results(
                 expanded_q, 
                 [dict(x) for x in hybrid_rrf_search(expanded_q, collection, chunks_cache, embedding_model, top_k=10, metadata_filter=meta_filter if meta_filter else None)],
-                reranker_model, 
-                top_k=5,
-                target_emp_id=emp_id
+                reranker_model, top_k=5, target_emp_id=emp_id
             )
         }
         
@@ -314,7 +359,6 @@ def run_offline_evaluation_benchmark(chunks_cache, collection):
                         hit_detected = True
                     mrr_reciprocals[strat] += (1.0 / rank)
                     break
-
     session.close()
 
     print("\n================== BENCHMARK METRIC MATRIX ==================")
@@ -324,7 +368,6 @@ def run_offline_evaluation_benchmark(chunks_cache, collection):
         print(f"🔹 Strategy: {s:<25} | Hit Rate @5: {final_hr:>5.1f}% | MRR: {final_mrr:.3f}")
     print("=============================================================\n")
 
-# --- 🚀 RUN LOOP SYSTEM ---
 def main():
     session = SessionLocal()
     pdf_chunks = generate_structure_aware_chunks(session)
