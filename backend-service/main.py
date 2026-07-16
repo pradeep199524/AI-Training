@@ -22,6 +22,7 @@ sys.path.append(os.path.join(base_dir, "..", "data-engineering"))
 
 from models import Base, Document, Ticket
 from retrieval_router import router as retrieval_router, initialize_retrieval_system
+from rag_api import router as rag_router
 
 load_dotenv()
 
@@ -73,6 +74,7 @@ app.add_middleware(
 
 # Register modular routers
 app.include_router(retrieval_router)
+app.include_router(rag_router)
 
 # ==========================================================================
 # CELERY CONFIGURATION
