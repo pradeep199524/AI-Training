@@ -8,7 +8,8 @@ import {
   FileText, 
   UploadCloud, 
   ListTodo,
-  Search // Added for Module 4 Query Engine
+  Search, // Added for Module 4 Query Engine
+  Bot // Added for Module 5 RAG Chatbot
 } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
@@ -18,7 +19,8 @@ const navigation = [
   { name: 'PDF Docs', href: '/pdf', icon: FileText },
   { name: 'Upload Hub', href: '/upload', icon: UploadCloud },
   { name: 'Task Monitor', href: '/tasks', icon: ListTodo },
-  { name: 'Query Engine', href: '/query', icon: Search }, // Added link route
+  { name: 'Query Engine', href: '/query', icon: Search },
+  { name: 'RAG Chatbot', href: '/rag_chatbot', icon: Bot }, // Added chatbot route
 ];
 
 export default function Sidebar() {

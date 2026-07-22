@@ -1,3 +1,5 @@
+import uuid
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy import Column, Integer, String, ForeignKey, Text, Index, DateTime
 from sqlalchemy.sql import func
 # 1. Import JSONB specifically for PostgreSQL features
@@ -65,3 +67,28 @@ class Ticket(Base):
 # --- Basic Indexing Setup ---
 Index('ix_pages_raw_json', Page.raw_json_content, postgresql_using='gin')
 Index('ix_csv_row_data', CleanedCsvRecord.row_data, postgresql_using='gin')
+
+# ==========================================
+# NEW TABLES FOR CHAT HISTORY (MEMORY)
+# ==========================================
+
+class ChatSession(Base):
+    __tablename__ = 'chat_sessions'
+
+    session_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String(255), nullable=False, default='New Chat')
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan")
+
+
+class ChatMessage(Base):
+    __tablename__ = 'chat_messages'
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey('chat_sessions.session_id', ondelete='CASCADE'), nullable=False)
+    role = Column(String(50), nullable=False) 
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    session = relationship("ChatSession", back_populates="messages")
