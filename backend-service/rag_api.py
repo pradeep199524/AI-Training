@@ -3,6 +3,9 @@ import sys
 import re
 import time  # Added for latency tracking and performance metrics
 import traceback
+import uuid
+from datetime import datetime
+from typing import Optional
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -32,6 +35,9 @@ router = APIRouter()
 # --- GLOBALS & CACHING ---
 RESPONSE_CACHE = {}
 
+# --- NEW: IN-MEMORY SESSION STORE FOR CHAT HISTORY ---
+SESSION_STORE = {}
+
 # --- CORE CHAT SCHEMAS ---
 class ChatMessage(BaseModel):
     role: str
@@ -40,6 +46,7 @@ class ChatMessage(BaseModel):
 class RAGChatRequest(BaseModel):
     query: str
     history: list[ChatMessage] = []
+    session_id: Optional[str] = None  # <-- FIX: Added Optional to allow null from frontend
 
 # --- ENTITY EXTRACTION HELPERS ---
 def extract_employee_id(query: str):
@@ -68,6 +75,42 @@ async def call_llm_with_retry(client, messages):
     )
 
 # ==========================================================================
+# NEW ENDPOINTS: SESSION MANAGEMENT FOR SIDEBAR
+# ==========================================================================
+
+@router.get("/api/v1/sessions", tags=["Chat History"])
+async def get_sessions():
+    """Returns a list of all chat sessions for the frontend sidebar."""
+    sessions = list(SESSION_STORE.values())
+    # Sort by creation time, newest first
+    sessions.sort(key=lambda x: x["created_at"], reverse=True)
+    
+    # Return only metadata, not full messages, for the sidebar list
+    return [
+        {
+            "session_id": s["session_id"],
+            "title": s["title"],
+            "created_at": s["created_at"]
+        } for s in sessions
+    ]
+
+@router.get("/api/v1/sessions/{session_id}/messages", tags=["Chat History"])
+async def get_session_messages(session_id: str):
+    """Returns the chat history for a specific session."""
+    if session_id not in SESSION_STORE:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return SESSION_STORE[session_id]["messages"]
+
+@router.delete("/api/v1/sessions/{session_id}", tags=["Chat History"])
+async def delete_session(session_id: str):
+    """Deletes a specific chat session."""
+    if session_id in SESSION_STORE:
+        del SESSION_STORE[session_id]
+        return {"status": "success", "message": "Session deleted"}
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+# ==========================================================================
 # CORE ENGINE: LOCAL AI ASSISTANT ENDPOINT (VECTOR & AGENTIC RETRIEVAL)
 # ==========================================================================
 @router.post("/api/v1/chat", tags=["Core AI Chat Engine"])
@@ -80,12 +123,41 @@ async def generate_rag_response(payload: RAGChatRequest):
     if not user_query:
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
         
+    # --- SESSION HANDLING ---
+    session_id = payload.session_id
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        # Generate a short title from the first query
+        title = user_query[:30] + "..." if len(user_query) > 30 else user_query
+        SESSION_STORE[session_id] = {
+            "session_id": session_id,
+            "title": title,
+            "created_at": datetime.now().isoformat(),
+            "messages": []
+        }
+    elif session_id not in SESSION_STORE:
+        # Fallback if session_id is provided but doesn't exist in memory (e.g. server restart)
+        SESSION_STORE[session_id] = {
+            "session_id": session_id,
+            "title": "Restored Chat",
+            "created_at": datetime.now().isoformat(),
+            "messages": []
+        }
+        
     cache_key = f"{user_q_lower}_{len(payload.history)}"
     if cache_key in RESPONSE_CACHE:
         cache_latency = round(time.time() - start_time, 4)
         print(f"\n[CACHE HIT] Instantly returning saved payload matrix for: '{user_query}'")
         print(f"[CACHE HIT LATENCY] Served in: {cache_latency} seconds\n")
-        return RESPONSE_CACHE[cache_key]
+        
+        cached_result = RESPONSE_CACHE[cache_key].copy()
+        cached_result["session_id"] = session_id
+        
+        # Save interaction to session store
+        SESSION_STORE[session_id]["messages"].append({"role": "user", "content": user_query})
+        SESSION_STORE[session_id]["messages"].append({"role": "assistant", "content": cached_result["answer"]})
+        
+        return cached_result
         
     session = retrieval_router.SessionLocal()
     
@@ -104,15 +176,18 @@ async def generate_rag_response(payload: RAGChatRequest):
         
         has_explicit_employee = bool(re.search(r'employee[_\s]?\d+', user_q_lower))
         
-        db_keywords = {"employee", "employees", "salary", "performance", "experience", "ticket", "id", "record", "detail", "count", "total", "department", "dept", "people"}
+        # FIX 1: Added broader database keywords (city, location, address, role, manager, etc.)
+        db_keywords = {"employee", "employees", "salary", "performance", "experience", "ticket", "id", "record", "detail", "count", "total", "department", "dept", "people", "city", "location", "address", "manager", "role", "title", "name"}
         query_words = set(re.findall(r'\w+', user_q_lower))
         
         is_database_query = has_explicit_employee or bool(query_words.intersection(db_keywords))
         
-        follow_up_keywords = {"he", "she", "his", "her", "him", "they", "their"}
+        # FIX 2: Added 'who', 'where' to catch more follow-up questions
+        follow_up_keywords = {"he", "she", "his", "her", "him", "they", "their", "who", "where"}
         is_follow_up = bool(query_words.intersection(follow_up_keywords))
         
-        if not has_explicit_employee and is_follow_up and payload.history and is_database_query:
+        # FIX 3: Check history if it's a follow-up, and force is_database_query to True if an employee is found
+        if not has_explicit_employee and is_follow_up and payload.history:
             last_known_emp = None
             for msg in reversed(payload.history):
                 if msg.role == "user":
@@ -122,6 +197,7 @@ async def generate_rag_response(payload: RAGChatRequest):
                         break
             if last_known_emp:
                 search_query = f"{last_known_emp} {user_query}"
+                is_database_query = True  # Force DB route
                 print(f"[ROUTER] Follow-up query expanded for search: '{search_query}'")
 
         emp_id = extract_employee_id(search_query)
@@ -182,6 +258,7 @@ async def generate_rag_response(payload: RAGChatRequest):
 
         client = AsyncOpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio", timeout=120.0)
         
+        # PRESERVED: Your exact prompt logic remains completely untouched here.
         messages = [
             {
                 "role": "system",
@@ -189,7 +266,6 @@ async def generate_rag_response(payload: RAGChatRequest):
                     "You are a professional and helpful Enterprise Data Assistant. Your goal is to answer the user's question cleanly, naturally, and conversationally using the provided context.\n\n"
                     "CRITICAL ASSISTANT RULES:\n"
                     "1. CONVERSATIONAL & COMPLETE SENTENCES: Always begin your response with a natural, complete introductory sentence that contextualizes the answer. NEVER output just raw, disconnected keywords or fragments.\n"
-                    # FIX: Explicitly ban the word "context" and meta-talk entirely
                     "2. NO CONTEXT OR SOURCE MENTIONS (CRITICAL): You are STRICTLY FORBIDDEN from using phrases like 'The context provides...', 'Based on the context...', 'According to the document...', or mentioning terms like 'database', 'CSV', or '.pdf'. Start answering the question directly from the first word as an absolute authority.\n"
                     "3. TYPO TOLERANCE: Gracefully handle simple user typos.\n"
                     "4. STRICT FACTUAL GROUNDING (ZERO HALLUCINATION): You are FORBIDDEN from using outside external knowledge. You must ONLY use the definitions, primary uses, and example tools EXPLICITLY written in the provided context.\n"
@@ -202,7 +278,7 @@ async def generate_rag_response(payload: RAGChatRequest):
             }
         ]
         
-        for msg in payload.history:
+        for msg in payload.history[-2:]:
             messages.append({"role": msg.role, "content": msg.content})
             
         final_prompt = (
@@ -243,11 +319,17 @@ async def generate_rag_response(payload: RAGChatRequest):
         print(f"[SERVER TERMINAL LOG] Outgoing Payload Stream:\n{final_answer}")
         print("-"*80 + "\n")
 
+        # FIX: Ensure session_id is returned
         final_result = {
             "answer": final_answer,
             "citations": citations,
-            "latency": f"{total_latency}s"
+            "latency": f"{total_latency}s",
+            "session_id": session_id
         }
+        
+        # --- SAVE TO SESSION STORE ---
+        SESSION_STORE[session_id]["messages"].append({"role": "user", "content": user_query})
+        SESSION_STORE[session_id]["messages"].append({"role": "assistant", "content": final_answer})
         
         RESPONSE_CACHE[cache_key] = final_result
         return final_result

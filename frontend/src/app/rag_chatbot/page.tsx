@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, ServerCrash, Clock } from 'lucide-react'; // FileText removed as it's no longer needed
+import { Send, User, Bot, Loader2, ServerCrash, Clock, Menu } from 'lucide-react';
+import ChatHistorySidebar, { ChatSession } from '@/components/ChatHistorySidebar';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -11,7 +12,6 @@ interface ChatMessage {
   timestamp?: string;
 }
 
-// Helper function to get current time (Forced 'en-US' for consistent AM/PM capitalization)
 const getCurrentTime = () => {
   return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 };
@@ -20,6 +20,10 @@ export default function ChatbotPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [query, setQuery] = useState('');
   
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     { 
       role: 'assistant', 
@@ -33,7 +37,73 @@ export default function ChatbotPage() {
 
   useEffect(() => {
     setIsMounted(true);
+    fetchSessions();
   }, []);
+
+  const fetchSessions = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/sessions');
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sessions:", err);
+    }
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setIsLoading(true);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/sessions/${sessionId}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        const formattedMessages = data.map((msg: any) => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: getCurrentTime()
+        }));
+        setMessages(formattedMessages.length > 0 ? formattedMessages : [
+          { role: 'assistant', content: 'Hello! How can I help you with this chat?', timestamp: getCurrentTime() }
+        ]);
+      }
+    } catch (err) {
+      console.error("Failed to load session messages:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleNewChat = () => {
+    setActiveSessionId(null);
+    setMessages([
+      { 
+        role: 'assistant', 
+        content: 'Hello. I am your AI Assistant, ready to help you analyze records and documents. How may I help you today?',
+        timestamp: getCurrentTime()
+      }
+    ]);
+  };
+
+  // --- NEW: Delete Session Function ---
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        // Remove the session from the sidebar UI immediately
+        setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+        // Reset to a new chat if the user deletes the currently active chat
+        if (activeSessionId === sessionId) {
+          handleNewChat();
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete session:", err);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,13 +134,13 @@ export default function ChatbotPage() {
     setError(null);
 
     try {
-      // --- FIXED: Changed localhost to 127.0.0.1 to match backend and avoid CORS/Network hangs ---
       const response = await fetch('http://127.0.0.1:8000/api/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           query: userMessage.content,
-          history: chatHistory 
+          history: chatHistory,
+          session_id: activeSessionId
         })
       });
 
@@ -78,6 +148,11 @@ export default function ChatbotPage() {
 
       if (!response.ok) {
         throw new Error(data.detail || 'Failed to fetch response from backend');
+      }
+      
+      if (data.session_id && !activeSessionId) {
+        setActiveSessionId(data.session_id);
+        fetchSessions();
       }
       
       const aiMessage: ChatMessage = { 
@@ -98,12 +173,32 @@ export default function ChatbotPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen max-h-screen bg-gray-50 p-4 sm:p-6 font-sans">
-      <div className="flex flex-col h-full max-w-5xl mx-auto w-full bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+    <div className="flex h-[calc(100vh-theme(spacing.16))] w-full bg-gray-50 font-sans overflow-hidden">
+      
+      {/* Inner Chat History Sidebar */}
+      <div className={`${isSidebarOpen ? 'flex' : 'hidden'} sm:flex h-full shrink-0 flex-col z-10`}>
+        <ChatHistorySidebar
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
+          onDeleteSession={handleDeleteSession} // --- NEW: Passed the delete function here ---
+        />
+      </div>
+
+      {/* Main Chat Panel */}
+      <div className="flex flex-col flex-1 h-full bg-white border-l border-gray-200 overflow-hidden relative">
         
-        {/* Header */}
-        <div className="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between shadow-md z-10">
+        {/* Header - Now fully visible at the top */}
+        <div className="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between shadow-md z-10 shrink-0">
           <div className="flex items-center space-x-3">
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+              className="text-slate-300 hover:text-white mr-1"
+              title="Toggle Sidebar"
+            >
+              <Menu size={22} />
+            </button>
             <div className="bg-blue-600 p-2 rounded-lg">
               <Bot size={24} />
             </div>
@@ -137,7 +232,6 @@ export default function ChatbotPage() {
                   }`}>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                     
-                    {/* Timestamp is ONLY rendered if the component is fully mounted */}
                     {isMounted && msg.timestamp && (
                       <span className={`absolute bottom-1.5 right-3 text-[10px] font-medium tracking-wide ${
                         msg.role === 'user' ? 'text-blue-200' : 'text-gray-400'
@@ -147,7 +241,6 @@ export default function ChatbotPage() {
                     )}
                   </div>
 
-                  {/* Latency Footer block (Citations mapping completely removed) */}
                   {msg.latency && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 pl-1">
                       <div className="flex items-center text-xs bg-gray-100 text-gray-600 border border-gray-200 px-2.5 py-1.5 rounded-lg font-medium shadow-sm">
@@ -161,7 +254,6 @@ export default function ChatbotPage() {
             </div>
           ))}
 
-          {/* Loading Indicator */}
           {isLoading && (
             <div className="flex justify-start">
               <div className="flex flex-row max-w-[80%]">
@@ -176,7 +268,6 @@ export default function ChatbotPage() {
             </div>
           )}
 
-          {/* Error Banner */}
           {error && (
             <div className="flex justify-center my-4">
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center shadow-sm max-w-lg">
@@ -190,7 +281,7 @@ export default function ChatbotPage() {
         </div>
 
         {/* Input Area */}
-        <div className="bg-white p-4 sm:p-5 border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div className="bg-white p-4 sm:p-5 border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
           <form onSubmit={handleSendMessage} className="flex relative items-center">
             <input
               type="text"
